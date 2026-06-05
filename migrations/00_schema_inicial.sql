@@ -1,19 +1,4 @@
-/* =====================================================================
-   Migración 00 — Esquema inicial (baseline del equipo)
-   Proyecto: Soldaduras de Sedas
-   ---------------------------------------------------------------------
-   Este es el esquema tal y como lo construyó el equipo. Se conserva como
-   línea base histórica; las mejoras (normalización, geografía, finanzas)
-   se aplican en migraciones posteriores (01, 02, ...).
-
-   NOTA SOBRE AZURE SQL:
-   Las dos primeras instrucciones (CREATE DATABASE / USE) NO se ejecutan en
-   Azure SQL Database (no soporta USE para cambiar de base ni CREATE DATABASE
-   con esa sintaxis). En el servidor Azure los objetos ya existen porque se
-   corrieron los CREATE TABLE directamente sobre la base
-   'soldadura-de-sedas-aymi-madre-db2'. Para correr en un SQL Server LOCAL
-   (p. ej. para el entregable de Moodle con SSMS) el script funciona completo.
-   ===================================================================== */
+-- 00: esquema inicial (baseline del equipo)
 
 DROP DATABASE IF EXISTS SoldadurasDeSedas;
 CREATE DATABASE SoldadurasDeSedas;
@@ -117,8 +102,7 @@ CREATE TABLE solicitudes_quincenales(
 );
 
 
-
---Relaciones y llaves compuestas
+-- Relaciones y llaves compuestas
 ALTER TABLE cotizaciones ADD FOREIGN KEY(id_cliente) REFERENCES clientes(id_cliente);
 
 ALTER TABLE proyectos ADD FOREIGN KEY(id_cliente) REFERENCES clientes(id_cliente);
