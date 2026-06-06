@@ -37,15 +37,17 @@ ORDER BY
 
 --4. Una consulta que muestre el detalle de una transacción, 
 --reserva o proceso específico.
-select 
-	mt.id_tipo_estructura,
-	mt.dimensiones_exactas,
-	um.abreviatura,
-	(mt.dimensiones_exactas*mt.pago_por_unidades) as 'Pago total'
-from
-	dbo.medidas_tecnicas mt
-inner join dbo.unidades_medida um
-	ON um.id_unidad = mt.id_unidad;
+SELECT 
+    mt.id_tipo_estructura,
+    mt.dimensiones_exactas,
+    um.abreviatura,
+    (
+        TRY_CAST(REPLACE(LTRIM(RTRIM(mt.dimensiones_exactas)), ',', '') AS NUMERIC(18,2)) *
+        TRY_CAST(REPLACE(LTRIM(RTRIM(mt.pago_por_unidades)), ',', '') AS NUMERIC(18,2))
+    ) AS [Pago total]
+from dbo.medidas_tecnicas mt
+INNER JOIN dbo.unidades_medida um
+    ON um.id_unidad = mt.id_unidad;
 
 --5. Cinco consultas adicionales propuestas por el grupo 
 --que utilicen funciones de agregación, subconsultas o ambas.
@@ -79,15 +81,19 @@ group by
 	p.nombre_proyecto;
 
 --3 Los pagos que relizaron a cada empleado en un determiando mes
-select 
-	t.nombre_completo_trabajador,
-	Count(n.monto_cancelado) as 'Pagos realizados'
-from dbo.nomina n
-inner join dbo.trabajadores t
-	on t.id_trabajador = n.id_trabajador
-Where n.fecha_pago between '2026-01-01' and '2026-01-31'
-group by 
-	t.nombre_completo_trabajador;
+SELECT 
+    t.nombre_completo_trabajador AS [Empleado],
+    COUNT(n.id_nomina) AS [Pagos realizados],
+    SUM(n.monto_cancelado) AS [Total pagado],
+    AVG(n.monto_cancelado) AS [Promedio por pago]
+FROM dbo.nomina n
+INNER JOIN dbo.trabajadores t
+    ON t.id_trabajador = n.id_trabajador
+WHERE n.fecha_pago BETWEEN '2026-01-01' AND '2026-01-31'
+GROUP BY 
+    t.nombre_completo_trabajador
+ORDER BY
+    SUM(n.monto_cancelado) DESC;
 
 --4. Cada uno de los pagos que se le hicieron a los trabajdores y su fehca
 SELECT 
