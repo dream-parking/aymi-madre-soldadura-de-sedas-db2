@@ -1,5 +1,3 @@
--- 00: esquema inicial (baseline del equipo)
-
 DROP DATABASE IF EXISTS SoldadurasDeSedas;
 CREATE DATABASE SoldadurasDeSedas;
 USE SoldadurasDeSedas;

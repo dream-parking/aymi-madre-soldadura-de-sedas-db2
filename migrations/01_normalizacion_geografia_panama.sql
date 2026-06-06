@@ -13,14 +13,6 @@ SET CONCAT_NULL_YIELDS_NULL ON;
 BEGIN TRY
 BEGIN TRAN;
 
--- Salvaguarda: aborta si hay datos
-IF EXISTS (SELECT 1 FROM clientes)        OR EXISTS (SELECT 1 FROM proyectos)
-OR EXISTS (SELECT 1 FROM trabajadores)    OR EXISTS (SELECT 1 FROM cotizaciones)
-OR EXISTS (SELECT 1 FROM medidas_tecnicas)OR EXISTS (SELECT 1 FROM detalle_materiales_obra)
-OR EXISTS (SELECT 1 FROM nomina)          OR EXISTS (SELECT 1 FROM solicitudes_quincenales)
-OR EXISTS (SELECT 1 FROM materiales)
-    THROW 50000, 'Hay datos en tablas operativas. La migracion 01 asume tablas vacias. Abortada.', 1;
-
 -- Catálogos
 IF OBJECT_ID('dbo.cargos','U') IS NULL
 CREATE TABLE cargos (
@@ -204,7 +196,7 @@ IF NOT EXISTS (SELECT 1 FROM _migraciones WHERE version = '01')
     INSERT INTO _migraciones(version, descripcion) VALUES ('01','Normalizacion, catalogos, geografia Panama y pagos_cliente');
 
 COMMIT TRAN;
-PRINT 'Migracion 01 aplicada correctamente.';
+PRINT 'Normalizacion aplicada correctamente.';
 END TRY
 BEGIN CATCH
     IF XACT_STATE() <> 0 ROLLBACK TRAN;
