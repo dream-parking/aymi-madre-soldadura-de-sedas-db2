@@ -78,4 +78,36 @@ group by
 	p.id_proyecto,
 	p.nombre_proyecto;
 
---3 Los pagos que se
+--3 Los pagos que relizaron a cada empleado en un determiando mes
+select 
+	t.nombre_completo_trabajador,
+	Count(n.monto_cancelado) as 'Pagos realizados'
+from dbo.nomina n
+inner join dbo.trabajadores t
+	on t.id_trabajador = n.id_trabajador
+Where n.fecha_pago between '2026-01-01' and '2026-01-31'
+group by 
+	t.nombre_completo_trabajador;
+
+--4. Cada uno de los pagos que se le hicieron a los trabajdores y su fehca
+SELECT 
+    t.nombre_completo_trabajador AS [Empleado],
+    n.monto_cancelado AS [Monto Pagado],
+    n.fecha_pago AS [Fecha de Pago]
+FROM dbo.nomina n
+INNER JOIN dbo.trabajadores t ON t.id_trabajador = n.id_trabajador
+ORDER BY 
+    t.nombre_completo_trabajador ASC, 
+    n.fecha_pago ASC;
+
+--5 La cantidad de proyectos que tienen cada cliente y la suma de sus proyectos
+select 
+	c.nombre_empresa_cliente,
+	COUNT(p.id_proyecto) as 'Cantidad de proyectos',
+	SUM(p.costo_total_proyecto) as 'Suma de sus proyectos'
+from dbo.clientes c
+inner join dbo.proyectos p
+	on p.id_cliente = c.id_cliente
+group by 
+	c.nombre_empresa_cliente
+ORDER BY 'Suma de sus proyectos' DESC;
