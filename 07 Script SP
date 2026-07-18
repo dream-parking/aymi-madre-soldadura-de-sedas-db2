@@ -1,0 +1,507 @@
+USE Soldadura_De_Sedas;
+GO
+
+
+-- SP 1 seguridad.sp_RegistrarCliente
+-- Inserta un nuevo cliente validando que el correo
+
+CREATE OR ALTER PROCEDURE seguridad.sp_RegistrarCliente
+    @nombre_empresa VARCHAR(200),
+    @telefono VARCHAR(20) = NULL,
+    @correo VARCHAR(150),
+    @id_direccion INT = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    -- Validaciones de entrada 
+            --Profe estos LTRIM y RTRIM es para limpiar espacios sobrantes (lo usare mucho)
+                                    --|
+                                    --|
+                                    --V
+    IF @nombre_empresa IS NULL OR LTRIM(RTRIM(@nombre_empresa)) = ''
+    BEGIN
+        RAISERROR('El nombre de la empresa es obligatorio.', 16, 1);
+        RETURN;
+    END;
+
+    IF @correo IS NULL OR LTRIM(RTRIM(@correo)) = ''
+    BEGIN
+        RAISERROR('El correo electronico es obligatorio.', 16, 1);
+        RETURN;
+    END;
+
+    BEGIN TRY
+
+        --Verificar que exista solo un correo igual
+        IF EXISTS (
+            SELECT 1 FROM dbo.cliente
+            WHERE correo_cliente = LTRIM(RTRIM(@correo))
+        )
+        BEGIN
+            RAISERROR(
+                'Ya existe un cliente con el correo: %s',
+                16, 1, @correo
+            );
+            RETURN;
+        END;
+
+        -- Validar que id_direccion exista
+        IF @id_direccion IS NOT NULL AND NOT EXISTS (
+            SELECT 1 FROM dbo.direcciones
+            WHERE id_direccion = @id_direccion
+        )
+        BEGIN
+            RAISERROR(
+                'La direccion con id = %d no existe.',
+                16, 1, @id_direccion
+            );
+            RETURN;
+        END;
+
+        -- Insertar nuevo cliente
+        INSERT INTO dbo.cliente
+            (nombre_empresa_cliente, telefono_cliente,
+             correo_cliente, fecha_registro,
+             id_direccion)
+        VALUES
+            (LTRIM(RTRIM(@nombre_empresa)),
+             @telefono,
+             LTRIM(RTRIM(@correo)),
+             CAST(GETDATE() AS DATE),
+             @id_direccion);
+
+        -- Confirmación
+        SELECT
+            SCOPE_IDENTITY()        AS id_cliente_nuevo,
+            'Cliente registrado OK' AS mensaje;
+
+    END TRY
+    BEGIN CATCH
+        -- Los errores
+        DECLARE @msg VARCHAR(4000) = ERROR_MESSAGE();
+        DECLARE @sev INT           = ERROR_SEVERITY();
+        DECLARE @sta INT           = ERROR_STATE();
+        RAISERROR(@msg, @sev, @sta);
+    END CATCH;
+END;
+GO
+
+
+
+
+-- SP 2 seguridad.sp_ActualizarProyecto
+-- Actualiza nombre, costo, estado y fecha fin estimada de un proyecto
+
+CREATE OR ALTER PROCEDURE seguridad.sp_ActualizarProyecto
+    @id_proyecto INT,
+    @nombre_proyecto VARCHAR(200) = NULL,
+    @id_estado INT = NULL,
+    @costo_total DECIMAL(18,2) = NULL,
+    @nueva_fecha_fin DATE = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    -- Validar parámetro
+    IF @id_proyecto IS NULL
+    BEGIN
+        RAISERROR('El parametro @id_proyecto es obligatorio.', 16, 1);
+        RETURN;
+    END;
+
+    BEGIN TRY
+
+        -- Verificar existencia del proyecto
+        IF NOT EXISTS (
+            SELECT 1 FROM dbo.proyecto
+            WHERE id_proyecto = @id_proyecto
+        )
+        BEGIN
+            RAISERROR(
+                'No existe el proyecto con id = %d.',
+                16, 1, @id_proyecto
+            );
+            RETURN;
+        END;
+
+        -- Actualizar tabla proyecto
+        UPDATE dbo.proyecto
+        SET
+            nombre_proyecto = ISNULL(@nombre_proyecto, nombre_proyecto),
+            costo_total_proyecto = ISNULL(@costo_total, costo_total_proyecto)
+        WHERE id_proyecto = @id_proyecto;
+
+        -- Actualizar estado si se proporciona
+        IF @id_estado IS NOT NULL
+        BEGIN
+            -- Validar que el estado exista
+            IF NOT EXISTS (
+                SELECT 1 FROM dbo.estados
+                WHERE id_estado = @id_estado
+            )
+            BEGIN
+                RAISERROR(
+                    'El estado con id = %d no existe.',
+                    16, 1, @id_estado
+                );
+                RETURN;
+            END;
+
+            IF EXISTS (
+                SELECT 1 FROM dbo.estado_proyecto
+                WHERE id_proyecto = @id_proyecto
+            )
+                UPDATE dbo.estado_proyecto
+                SET id_estado = @id_estado
+                WHERE id_proyecto = @id_proyecto;
+            ELSE
+                INSERT INTO dbo.estado_proyecto (id_proyecto, id_estado)
+                VALUES (@id_proyecto, @id_estado);
+        END;
+
+        -- Actualizar fecha fin estimada
+        IF @nueva_fecha_fin IS NOT NULL
+        BEGIN
+            IF EXISTS (
+                SELECT 1 FROM dbo.proyecto_fecha_fin_estimada
+                WHERE id_proyecto = @id_proyecto
+            )
+                UPDATE dbo.proyecto_fecha_fin_estimada
+                SET fecha_estimada = @nueva_fecha_fin
+                WHERE id_proyecto = @id_proyecto;
+            ELSE
+                -- id_fecha_estimada es INT: usar el próximo valor disponible
+                INSERT INTO dbo.proyecto_fecha_fin_estimada
+                    (id_proyecto, id_fecha_estimada, fecha_estimada)
+                VALUES (
+                    @id_proyecto,
+                    ISNULL((SELECT MAX(id_fecha_estimada) + 1
+                            FROM dbo.proyecto_fecha_fin_estimada), 1),
+                    @nueva_fecha_fin
+                );
+        END;
+
+        -- Confirmación
+        SELECT
+            @id_proyecto AS id_proyecto,
+            'Proyecto actualizado' AS mensaje;
+
+    END TRY
+    BEGIN CATCH
+        DECLARE @msg VARCHAR(4000) = ERROR_MESSAGE();
+        DECLARE @sev INT = ERROR_SEVERITY();
+        DECLARE @sta INT = ERROR_STATE();
+        RAISERROR(@msg, @sev, @sta);
+    END CATCH;
+END;
+GO
+
+
+
+-- SP 3 dbo.sp_BuscarRegistros
+-- Busca Proyectos, Clientes y Trabajadores por nombre, estado o rango de fechas
+CREATE OR ALTER PROCEDURE dbo.sp_BuscarRegistros
+    @nombre VARCHAR(200) = NULL,
+    @id_estado INT = NULL,
+    @fecha_inicio DATE = NULL,
+    @fecha_fin DATE = NULL,
+    @entidad VARCHAR(20) = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    BEGIN TRY
+
+        -- Validar rango de fechas
+        IF @fecha_inicio IS NOT NULL
+           AND @fecha_fin IS NOT NULL
+           AND @fecha_inicio > @fecha_fin
+        BEGIN
+            RAISERROR(
+                '@fecha_inicio no puede ser mayor que @fecha_fin.',
+                16, 1
+            );
+            RETURN;
+        END;
+
+        -- Resultados de los proyectos
+        IF @entidad IS NULL OR UPPER(@entidad) = 'PROYECTO'
+        BEGIN
+            SELECT
+                'PROYECTO' AS tipo_entidad,
+                p.id_proyecto AS id,
+                p.nombre_proyecto AS nombre,
+                CAST(p.costo_total_proyecto AS VARCHAR(50)) AS dato_extra,
+                e.descripcion_state AS estado,
+                pfi.fecha_inicio AS fecha_referencia
+            FROM dbo.proyecto p
+            LEFT JOIN  dbo.estado_proyecto ep
+                    ON ep.id_proyecto  = p.id_proyecto
+            LEFT JOIN  dbo.estados e
+                    ON e.id_estado = ep.id_estado
+            LEFT JOIN  dbo.proyecto_fecha_inicio pfi
+                    ON pfi.id_proyecto = p.id_proyecto
+            WHERE
+                (@nombre IS NULL OR p.nombre_proyecto LIKE '%' + @nombre + '%')
+                AND (@id_estado IS NULL OR ep.id_estado = @id_estado)
+                AND (@fecha_inicio IS NULL OR pfi.fecha_inicio >= @fecha_inicio)
+                AND (@fecha_fin IS NULL OR pfi.fecha_inicio <= @fecha_fin);
+        END;
+
+        -- Resultados de los clientes
+        IF @entidad IS NULL OR UPPER(@entidad) = 'CLIENTE'
+        BEGIN
+            SELECT
+                'CLIENTE' AS tipo_entidad,
+                c.id_cliente AS id,
+                c.nombre_empresa_cliente AS nombre,
+                c.correo_cliente AS dato_extra,
+                NULL AS estado,
+                c.fecha_registro AS fecha_referencia
+            FROM dbo.cliente c
+            WHERE
+                (@nombre IS NULL
+                    OR c.nombre_empresa_cliente LIKE '%' + @nombre + '%')
+                AND (@fecha_inicio IS NULL OR c.fecha_registro >= @fecha_inicio)
+                AND (@fecha_fin    IS NULL OR c.fecha_registro <= @fecha_fin);
+        END;
+
+        -- Resultados de los trabajadores
+        IF @entidad IS NULL OR UPPER(@entidad) = 'TRABAJADOR'
+        BEGIN
+            SELECT
+                'TRABAJADOR' AS tipo_entidad,
+                t.id_trabajador AS id,
+                t.nombre_trabajador AS nombre,
+                c.nombre_cargo AS dato_extra,
+                NULL AS estado,
+                NULL AS fecha_referencia
+            FROM dbo.trabajadores t
+            LEFT JOIN dbo.cargos c ON c.id_cargo = t.id_cargo
+            WHERE
+                (@nombre IS NULL
+                    OR t.nombre_trabajador LIKE '%' + @nombre + '%');
+        END;
+
+    END TRY
+    BEGIN CATCH
+        DECLARE @msg VARCHAR(4000) = ERROR_MESSAGE();
+        DECLARE @sev INT = ERROR_SEVERITY();
+        DECLARE @sta INT = ERROR_STATE();
+        RAISERROR(@msg, @sev, @sta);
+    END CATCH;
+END;
+GO
+
+
+
+-- SP 4 dbo.sp_ConsultarProyectosActivos
+-- Devuelve todos los proyectos activos con datos del cliente, fechas y saldo de cuenta
+
+CREATE OR ALTER PROCEDURE dbo.sp_ConsultarProyectosActivos
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    BEGIN TRY
+
+        -- Consulta principal
+        SELECT
+            -- Proyecto
+            p.id_proyecto,
+            p.nombre_proyecto,
+            p.costo_total_proyecto,
+
+            -- Estado
+            e.descripcion_state AS estado,
+
+            -- Cliente
+            c.id_cliente,
+            c.nombre_empresa_cliente,
+            c.telefono_cliente,
+            c.correo_cliente,
+
+            -- Fechas
+            pfi.fecha_inicio AS fecha_inicio_proyecto,
+            pfe.fecha_estimada AS fecha_fin_estimada,
+
+            -- Saldo cuenta
+            ecp.saldo_cuenta
+
+        FROM dbo.proyecto p
+
+        -- Filtro de estado activo
+        INNER JOIN dbo.estado_proyecto ep
+                ON ep.id_proyecto = p.id_proyecto
+        INNER JOIN dbo.estados e
+                ON e.id_estado = ep.id_estado
+               AND LOWER(e.descripcion_state) LIKE '%activo%'
+
+        -- Datos del cliente
+        LEFT JOIN  dbo.cliente c
+                ON c.id_cliente = p.id_cliente
+
+        -- Fechas
+        LEFT JOIN  dbo.proyecto_fecha_inicio pfi
+                ON pfi.id_proyecto = p.id_proyecto
+        LEFT JOIN  dbo.proyecto_fecha_fin_estimada pfe
+                ON pfe.id_proyecto = p.id_proyecto
+
+        -- Saldo de cuenta
+        LEFT JOIN  dbo.estados_cuenta_proyecto ecp
+                ON ecp.id_proyecto = p.id_proyecto
+
+        ORDER BY p.id_proyecto;
+
+        -- Conteo resumen
+        SELECT COUNT(*) AS total_proyectos_activos
+        FROM dbo.estado_proyecto ep
+        JOIN dbo.estados e ON e.id_estado = ep.id_estado
+        WHERE LOWER(e.descripcion_state) LIKE '%activo%';
+
+    END TRY
+    BEGIN CATCH
+        DECLARE @msg VARCHAR(4000) = ERROR_MESSAGE();
+        DECLARE @sev INT = ERROR_SEVERITY();
+        DECLARE @sta INT = ERROR_STATE();
+        RAISERROR(@msg, @sev, @sta);
+    END CATCH;
+END;
+GO
+
+
+-- SP 5 seguridad.sp_ReporteOperacional
+-- Reporte filtrado por fecha y estado que
+--             muestra por proyecto:
+--               • Datos del proyecto y cliente
+--               • Total nómina del período
+--               • Total materiales utilizados
+--               • Saldo actual de cuenta
+
+CREATE OR ALTER PROCEDURE seguridad.sp_ReporteOperacional
+    @fecha_inicio DATE = NULL,
+    @fecha_fin DATE = NULL,
+    @id_estado INT = NULL
+AS
+BEGIN
+    SET NOCOUNT ON;
+
+    -- Valores por defecto de fechas
+    SET @fecha_inicio = ISNULL(
+            @fecha_inicio,
+            DATEFROMPARTS(YEAR(GETDATE()), 1, 1)
+        );
+    SET @fecha_fin = ISNULL(@fecha_fin, CAST(GETDATE() AS DATE));
+
+    BEGIN TRY
+
+        -- Validar rango de fechas
+        IF @fecha_inicio > @fecha_fin
+        BEGIN
+            RAISERROR(
+                'La fecha de inicio no puede ser mayor que la fecha fin.',
+                16, 1
+            );
+            RETURN;
+        END;
+
+        -- Total nómina por proyecto
+        -- Suma monto_cancelado de nomina_monto filtrado por fecha_pago
+        ;WITH CTE_Nomina AS (
+            SELECT
+                n.id_proyecto,
+                SUM(nm.monto_cancelado) AS total_nomina
+            FROM dbo.nomina n
+            INNER JOIN dbo.nomina_monto nm
+                    ON nm.id_nomina = n.id_nomina
+            WHERE nm.fecha_pago BETWEEN @fecha_inicio AND @fecha_fin
+            GROUP BY n.id_proyecto
+        ),
+
+        -- Total materiales por proyecto 
+        -- Usa medidas_tecnicas.pago_por_unidad * detalle_material_obra
+        -- medidas_tecnicas está ligada a proyecto por id_proyecto
+        CTE_Materiales AS (
+            SELECT
+                mt.id_proyecto,
+                SUM(
+                    ISNULL(dmo.cantidad_utilizada, 0) *
+                    ISNULL(mt.pago_por_unidad, 0)
+                ) AS total_materiales
+            FROM dbo.medidas_tecnicas mt
+            LEFT JOIN dbo.detalle_material_obra dmo
+                   ON dmo.id_proyecto = mt.id_proyecto
+            GROUP BY mt.id_proyecto
+        )
+
+        -- Resultado final
+        SELECT
+            -- Proyecto
+            p.id_proyecto,
+            p.nombre_proyecto,
+            p.costo_total_proyecto,
+
+            -- Estado
+            e.descripcion_state AS estado_proyecto,
+
+            -- Cliente
+            c.nombre_empresa_cliente AS cliente,
+            c.correo_cliente,
+            c.telefono_cliente,
+
+            -- Fechas del proyecto
+            pfi.fecha_inicio AS fecha_inicio_proyecto,
+            pfe.fecha_estimada AS fecha_fin_estimada,
+
+            -- Financiero
+            ISNULL(cn.total_nomina, 0) AS total_nomina_periodo,
+            ISNULL(cm.total_materiales, 0) AS total_materiales,
+            ISNULL(ecp.saldo_cuenta, 0) AS saldo_actual
+
+        FROM dbo.proyecto p
+
+        INNER JOIN dbo.estado_proyecto ep
+                ON ep.id_proyecto = p.id_proyecto
+        INNER JOIN dbo.estados e
+                ON e.id_estado = ep.id_estado
+
+        LEFT JOIN  dbo.cliente c
+                ON c.id_cliente = p.id_cliente
+
+        LEFT JOIN dbo.proyecto_fecha_inicio pfi
+                ON pfi.id_proyecto = p.id_proyecto
+        LEFT JOIN dbo.proyecto_fecha_fin_estimada pfe
+                ON pfe.id_proyecto = p.id_proyecto
+
+        LEFT JOIN dbo.estados_cuenta_proyecto ecp
+                ON ecp.id_proyecto = p.id_proyecto
+
+        LEFT JOIN CTE_Nomina cn
+                ON cn.id_proyecto = p.id_proyecto
+        LEFT JOIN CTE_Materiales cm
+                ON cm.id_proyecto = p.id_proyecto
+
+        WHERE
+            -- Filtro de estado
+            (@id_estado IS NULL OR ep.id_estado = @id_estado)
+            -- Filtro de fecha inicio del proyecto dentro del rango
+            AND (
+                pfi.fecha_inicio IS NULL
+                OR pfi.fecha_inicio BETWEEN @fecha_inicio AND @fecha_fin
+            )
+
+        ORDER BY p.id_proyecto;
+
+    END TRY
+    BEGIN CATCH
+        DECLARE @msg VARCHAR(4000) = ERROR_MESSAGE();
+        DECLARE @sev INT = ERROR_SEVERITY();
+        DECLARE @sta INT = ERROR_STATE();
+        RAISERROR(@msg, @sev, @sta);
+    END CATCH;
+END;
+GO
+
+
+

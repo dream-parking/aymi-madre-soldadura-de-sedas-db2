@@ -1,0 +1,345 @@
+USE Soldadura_De_Sedas;
+GO
+
+
+-- Vista 1 seguridad.vw_ProyectosActivos
+-- Proyectos con estado activo mostrando cliente, fechas, saldo y responsable
+CREATE OR ALTER VIEW seguridad.vw_ProyectosActivos
+AS
+    SELECT
+        -- Proyecto
+        p.id_proyecto,
+        p.nombre_proyecto,
+        p.costo_total_proyecto,
+
+        -- Estado
+        e.descripcion_state AS estado,
+
+        -- Cliente
+        c.id_cliente,
+        c.nombre_empresa_cliente AS cliente,
+        c.telefono_cliente,
+        c.correo_cliente,
+
+        -- Fechas
+        pfi.fecha_inicio AS fecha_inicio,
+        pfe.fecha_estimada AS fecha_fin_estimada,
+
+        -- Saldo de cuenta
+        ecp.saldo_cuenta,
+
+        -- Responsable asignado al proyecto
+        t.id_trabajador,
+        t.nombre_trabajador AS responsable,
+        ca.nombre_cargo AS cargo_responsable,
+        ap.fecha_inicio_asignacion AS fecha_asignacion
+
+    FROM dbo.proyecto p
+
+    -- Solo proyectos activos
+    INNER JOIN dbo.estado_proyecto ep
+            ON ep.id_proyecto = p.id_proyecto
+    INNER JOIN dbo.estados e
+            ON e.id_estado = ep.id_estado
+           AND LOWER(e.descripcion_state) LIKE '%activo%'
+
+    -- Cliente
+    LEFT JOIN dbo.cliente c
+            ON c.id_cliente = p.id_cliente
+
+    -- Fechas
+    LEFT JOIN dbo.proyecto_fecha_inicio pfi
+            ON pfi.id_proyecto = p.id_proyecto
+    LEFT JOIN dbo.proyecto_fecha_fin_estimada pfe
+            ON pfe.id_proyecto = p.id_proyecto
+
+    -- Saldo
+    LEFT JOIN dbo.estados_cuenta_proyecto ecp
+            ON ecp.id_proyecto = p.id_proyecto
+
+    -- Trabajador responsable
+    LEFT JOIN dbo.asignacion_personal ap
+            ON ap.id_proyecto = p.id_proyecto
+    LEFT JOIN dbo.trabajadores t
+            ON t.id_trabajador = ap.id_trabajador
+    LEFT JOIN dbo.cargos ca
+            ON ca.id_cargo = t.id_cargo;
+GO
+
+
+-- Vista 2 seguridad.vw_HistorialAuditoria
+-- Historial completo de la tabla Auditoria: tabla afectada, operacion, fecha y usuario
+CREATE OR ALTER VIEW seguridad.vw_HistorialAuditoria
+AS
+    SELECT
+        a.id_auditoria,
+        a.tabla AS tabla_afectada,
+        a.operacion,
+        a.fecha,
+        a.usuario_sql AS usuario,
+        a.valores_anteriores,
+        a.valores_nuevos
+    FROM dbo.Auditoria a;
+GO
+
+
+-- Vista 3 dbo.vw_DetalleProyecto
+-- Vista completa por proyecto: cliente, cotizacion, trabajadores, materiales usados, medidas tecnicas y saldo de cuenta
+CREATE OR ALTER VIEW dbo.vw_DetalleProyecto
+AS
+    SELECT
+        -- Proyecto
+        p.id_proyecto,
+        p.nombre_proyecto,
+        p.costo_total_proyecto,
+
+        -- Estado
+        e.descripcion_state AS estado_proyecto,
+
+        -- Cliente
+        c.nombre_empresa_cliente AS cliente,
+        c.telefono_cliente,
+        c.correo_cliente,
+
+        -- Cotizacion
+        cot.id_cotizacion,
+        cot.monto_cotizado,
+        cot.fecha_cotizacion,
+        cot.estado_cotizacion,
+
+        -- Trabajador asignado
+        t.nombre_trabajador AS trabajador,
+        ca.nombre_cargo AS cargo,
+        ap.fecha_inicio_asignacion,
+
+        -- Materiales usados
+        m.descripcion_material AS material,
+        cm.nombre_categoria AS categoria_material,
+        dmo.cantidad_utilizada,
+
+        -- Medidas tecnicas
+        mt.dimensiones_medida,
+        mt.pago_por_unidad,
+        te.descripcion_estructura AS tipo_estructura,
+        um.descripcion_unidad AS unidad_medida,
+
+        -- Saldo cuenta
+        ecp.saldo_cuenta,
+
+        -- Fechas
+        pfi.fecha_inicio AS fecha_inicio,
+        pfe.fecha_estimada AS fecha_fin_estimada
+
+    FROM dbo.proyecto p
+
+    -- Estado
+    LEFT JOIN dbo.estado_proyecto ep
+            ON ep.id_proyecto = p.id_proyecto
+    LEFT JOIN dbo.estados e
+            ON e.id_estado = ep.id_estado
+
+    -- Cliente
+    LEFT JOIN dbo.cliente c
+            ON c.id_cliente = p.id_cliente
+
+    -- Cotizacion
+    LEFT JOIN dbo.cotizaciones cot
+            ON cot.id_cotizacion = p.id_cotizacion
+
+    -- Trabajadores asignados
+    LEFT JOIN dbo.asignacion_personal ap
+            ON ap.id_proyecto = p.id_proyecto
+    LEFT JOIN dbo.trabajadores t
+            ON t.id_trabajador = ap.id_trabajador
+    LEFT JOIN dbo.cargos ca
+            ON ca.id_cargo = t.id_cargo
+
+    -- Materiales
+    LEFT JOIN dbo.detalle_material_obra dmo
+            ON dmo.id_proyecto = p.id_proyecto
+    LEFT JOIN dbo.materiales m
+            ON m.id_material = dmo.id_material
+    LEFT JOIN dbo.categoria_material cm
+            ON cm.id_categoria = m.id_categoria
+
+    -- Medidas tecnicas
+    LEFT JOIN dbo.medidas_tecnicas mt
+            ON mt.id_proyecto = p.id_proyecto
+    LEFT JOIN dbo.tipo_estructura te
+            ON te.id_tipo_estructura = mt.id_tipo_estructura
+    LEFT JOIN dbo.unidad_medida um
+            ON um.id_unidad_medida = mt.id_unidad_medida
+
+    -- Saldo
+    LEFT JOIN dbo.estados_cuenta_proyecto ecp
+            ON ecp.id_proyecto = p.id_proyecto
+
+    -- Fechas
+    LEFT JOIN dbo.proyecto_fecha_inicio pfi
+            ON pfi.id_proyecto = p.id_proyecto
+    LEFT JOIN dbo.proyecto_fecha_fin_estimada pfe
+            ON pfe.id_proyecto = p.id_proyecto;
+GO
+
+
+
+-- Vista 4 dbo.vw_ActividadUltimoMes
+-- Registros de Nomina, Solicitudes Quincenales y Detalle de Materiales con actividad en los ultimos 30 dias
+CREATE OR ALTER VIEW dbo.vw_ActividadUltimoMes
+AS
+    -- Nominas pagadas en los ultimos 30 dias
+    SELECT
+        'NOMINA' AS tipo_actividad,
+        n.id_proyecto,
+        p.nombre_proyecto,
+        n.id_nomina AS id_registro,
+        CAST(n.periodo_quincenal_nomina AS VARCHAR(100)) AS descripcion,
+        nm.fecha_pago AS fecha_actividad,
+        CAST(nm.monto_cancelado AS DECIMAL(18,2)) AS monto
+    FROM dbo.nomina n
+    INNER JOIN dbo.nomina_monto nm
+            ON nm.id_nomina = n.id_nomina
+    LEFT JOIN dbo.proyecto p
+            ON p.id_proyecto = n.id_proyecto
+    WHERE nm.fecha_pago >= CAST(DATEADD(DAY, -30, GETDATE()) AS DATE)
+
+    UNION ALL
+
+    -- Solicitudes quincenales relacionadas a nominas del ultimo mes
+    SELECT
+        'SOLICITUD_QUINCENAL' AS tipo_actividad,
+        sq.id_proyecto,
+        p.nombre_proyecto,
+        sq.id_solicitud AS id_registro,
+        'Solicitud monto: ' + CAST(sq.monto_solicitud AS VARCHAR(50)) AS descripcion,
+        nm.fecha_pago AS fecha_actividad,
+        CAST(sq.monto_solicitud AS DECIMAL(18,2)) AS monto
+    FROM dbo.solicitudes_quincenales sq
+    LEFT JOIN dbo.proyecto p
+            ON p.id_proyecto = sq.id_proyecto
+    -- Tomamos la fecha de pago de la nomina del mismo proyecto
+    LEFT JOIN dbo.nomina n
+            ON n.id_proyecto = sq.id_proyecto
+    LEFT JOIN dbo.nomina_monto nm
+            ON nm.id_nomina = n.id_nomina
+    WHERE nm.fecha_pago >= CAST(DATEADD(DAY, -30, GETDATE()) AS DATE)
+
+    UNION ALL
+
+    -- Materiales de obras con actividad de nomina en el ultimo mes
+    -- detalle_material_obra no tiene fecha propia, se usa la fecha de nomina del proyecto
+    SELECT
+        'MATERIAL_OBRA' AS tipo_actividad,
+        dmo.id_proyecto,
+        p.nombre_proyecto,
+        dmo.id_material AS id_registro,
+        'Material: ' + m.descripcion_material AS descripcion,
+        nm.fecha_pago AS fecha_actividad,
+        CAST(dmo.cantidad_utilizada AS DECIMAL(18,2)) AS monto
+    FROM dbo.detalle_material_obra dmo
+    LEFT JOIN dbo.proyecto p
+            ON p.id_proyecto = dmo.id_proyecto
+    LEFT JOIN dbo.materiales m
+            ON m.id_material = dmo.id_material
+    LEFT JOIN dbo.nomina n
+            ON n.id_proyecto = dmo.id_proyecto
+    LEFT JOIN dbo.nomina_monto nm
+            ON nm.id_nomina = n.id_nomina
+    WHERE nm.fecha_pago >= CAST(DATEADD(DAY, -30, GETDATE()) AS DATE);
+GO
+
+-- Vista 5 dbo.vw_EstadisticasPorEstado
+-- Conteo y suma de montos agrupados por estado de Proyecto y Cotizacion
+CREATE OR ALTER VIEW dbo.vw_EstadisticasPorEstado
+AS
+    -- Estadisticas de proyectos agrupados por estado
+    SELECT
+        'PROYECTO' AS tipo_entidad,
+        e.id_estado,
+        e.descripcion_state AS estado,
+        COUNT(DISTINCT p.id_proyecto) AS total_registros,
+        SUM(ISNULL(p.costo_total_proyecto, 0)) AS suma_montos,
+        AVG(ISNULL(p.costo_total_proyecto, 0)) AS promedio_monto,
+        MIN(pfi.fecha_inicio) AS fecha_mas_antigua,
+        MAX(pfi.fecha_inicio) AS fecha_mas_reciente
+    FROM dbo.estados e
+    LEFT JOIN dbo.estado_proyecto ep
+            ON ep.id_estado = e.id_estado
+    LEFT JOIN dbo.proyecto p
+            ON p.id_proyecto = ep.id_proyecto
+    LEFT JOIN dbo.proyecto_fecha_inicio pfi
+            ON pfi.id_proyecto = p.id_proyecto
+    GROUP BY e.id_estado, e.descripcion_state
+
+    UNION ALL
+
+    -- Estadisticas de cotizaciones agrupadas por su estado propio
+    SELECT
+        'COTIZACION' AS tipo_entidad,
+        NULL AS id_estado,
+        cot.estado_cotizacion AS estado,
+        COUNT(*) AS total_registros,
+        SUM(ISNULL(cot.monto_cotizado, 0)) AS suma_montos,
+        AVG(ISNULL(cot.monto_cotizado, 0)) AS promedio_monto,
+        MIN(cot.fecha_cotizacion) AS fecha_mas_antigua,
+        MAX(cot.fecha_cotizacion) AS fecha_mas_reciente
+    FROM dbo.cotizaciones cot
+    GROUP BY cot.estado_cotizacion;
+GO
+
+
+
+-- Vista 6 dbo.vw_RankingMaterialesUsados
+-- Ranking de materiales ordenados por cantidad total utilizada en todas las obras
+CREATE OR ALTER VIEW dbo.vw_RankingMaterialesUsados
+AS
+    SELECT
+        -- Posicion calculada por cantidad total descendente
+        ROW_NUMBER() OVER (
+            ORDER BY SUM(dmo.cantidad_utilizada) DESC
+        ) AS posicion_ranking,
+
+        -- Material
+        m.id_material,
+        m.descripcion_material AS material,
+        m.especificaciones,
+
+        -- Categoria
+        cm.nombre_categoria AS categoria,
+
+        -- Unidad de medida
+        um.descripcion_unidad AS unidad_medida,
+
+        -- Metricas de uso
+        COUNT(DISTINCT dmo.id_proyecto) AS proyectos_donde_se_uso,
+        SUM(dmo.cantidad_utilizada) AS cantidad_total_utilizada,
+
+        -- Costo estimado usando pago_por_unidad de medidas_tecnicas
+        SUM(
+            dmo.cantidad_utilizada *
+            ISNULL(mt.pago_por_unidad, 0)
+        ) AS costo_total_estimado
+
+    FROM dbo.detalle_material_obra dmo
+
+    INNER JOIN dbo.materiales m
+            ON m.id_material = dmo.id_material
+
+    LEFT JOIN dbo.categoria_material cm
+            ON cm.id_categoria = m.id_categoria
+
+    LEFT JOIN dbo.unidad_medida um
+            ON um.id_unidad_medida = m.id_unidad
+
+    -- Precio por unidad desde medidas_tecnicas del proyecto
+    LEFT JOIN dbo.medidas_tecnicas mt
+            ON mt.id_proyecto = dmo.id_proyecto
+
+    GROUP BY
+        m.id_material,
+        m.descripcion_material,
+        m.especificaciones,
+        cm.nombre_categoria,
+        um.descripcion_unidad;
+GO
+
