@@ -1,0 +1,236 @@
+--1. TABLAS INDEPENDIENTES
+
+CREATE TABLE categoria_material (
+    id_categoria INT IDENTITY(1,1),
+    nombre_categoria VARCHAR(100) NOT NULL,
+    CONSTRAINT PK_categoria_material PRIMARY KEY (id_categoria)
+);
+
+CREATE TABLE unidad_medida (
+    id_unidad_medida INT IDENTITY(1,1),
+    descripcion_unidad VARCHAR(100) NOT NULL,
+    CONSTRAINT PK_unidad_medida PRIMARY KEY (id_unidad_medida)
+);
+
+CREATE TABLE tipo_estructura (
+    id_tipo_estructura INT IDENTITY(1,1),
+    descripcion_estructura VARCHAR(150) NOT NULL,
+    CONSTRAINT PK_tipo_estructura PRIMARY KEY (id_tipo_estructura)
+);
+
+CREATE TABLE cargos (
+    id_cargo INT IDENTITY(1,1),
+    nombre_cargo VARCHAR(100) NOT NULL,
+    tarifa_base_cargo DECIMAL(10,2) NOT NULL,
+    CONSTRAINT PK_cargos PRIMARY KEY (id_cargo)
+);
+
+CREATE TABLE estados (
+    id_estado INT IDENTITY(1,1),
+    descripcion_state VARCHAR(100) NOT NULL, -- 'descripcion_estado' en el diagrama
+    CONSTRAINT PK_estados PRIMARY KEY (id_estado)
+);
+
+CREATE TABLE provincia (
+    id_provincia INT IDENTITY(1,1),
+    nombre_provincia VARCHAR(100) NOT NULL,
+    CONSTRAINT PK_provincia PRIMARY KEY (id_provincia)
+);
+
+CREATE TABLE corregimientos (
+    id_corregimiento INT IDENTITY(1,1),
+    nombre_corregimiento VARCHAR(100) NOT NULL,
+    CONSTRAINT PK_corregimientos PRIMARY KEY (id_corregimiento)
+);
+
+CREATE TABLE distrito (
+    id_distrito INT IDENTITY(1,1),
+    nombre_distrito VARCHAR(100) NOT NULL,
+    CONSTRAINT PK_distrito PRIMARY KEY (id_distrito)
+);
+
+CREATE TABLE cotizaciones (
+    id_cotizacion INT IDENTITY(1,1),
+    id_cliente INT,
+    monto_cotizado DECIMAL(12,2) NOT NULL,
+    ESTADO VARCHAR(50)
+    fecha_cotizacion DATE DEFAULT GETDATE(),
+    CONSTRAINT PK_cotizaciones PRIMARY KEY (id_cotizacion),
+    CONSTRAINT FK_cotizaciones_cliente FOREIGN KEY (id_cliente) REFERENCES cliente(id_cliente));
+
+-- 2. TABLAS CON DEPENDENCIAS SIMPLES Y GEOGRÁFICAS (Nivel 2)
+
+CREATE TABLE distrito_provincia (
+    id_provincia INT,
+    id_distrito INT,
+    CONSTRAINT PK_distrito_provincia PRIMARY KEY (id_provincia, id_distrito),
+    CONSTRAINT FK_distritoProv_provincia FOREIGN KEY (id_provincia) REFERENCES provincia(id_provincia),
+    CONSTRAINT FK_distritoProv_distrito FOREIGN KEY (id_distrito) REFERENCES distrito(id_distrito)
+);
+
+CREATE TABLE corregimiento_distrito (
+    id_corregimiento INT,
+    id_distrito INT,
+    CONSTRAINT PK_corregimiento_distrito PRIMARY KEY (id_corregimiento, id_distrito),
+    CONSTRAINT FK_corrDist_corregimiento FOREIGN KEY (id_corregimiento) REFERENCES corregimientos(id_corregimiento),
+    CONSTRAINT FK_corrDist_distrito FOREIGN KEY (id_distrito) REFERENCES distrito(id_distrito)
+);
+
+CREATE TABLE direcciones (
+    id_direccion INT IDENTITY(1,1),
+    id_corregimiento INT,
+    via_principal VARCHAR(150),
+    barrio_urbanizacion VARCHAR(150),
+    latitud DECIMAL(9,6),
+    longitud DECIMAL(9,6),
+    CONSTRAINT PK_direcciones PRIMARY KEY (id_direccion),
+    CONSTRAINT FK_direcciones_corregimiento FOREIGN KEY (id_corregimiento) REFERENCES corregimientos(id_corregimiento)
+);
+
+CREATE TABLE materiales (
+    id_material INT IDENTITY(1,1),
+    descripcion_material VARCHAR(150) NOT NULL,
+    especificaciones VARCHAR(255),
+    id_categoria INT,
+    id_unidad INT,
+    CONSTRAINT PK_materiales PRIMARY KEY (id_material),
+    CONSTRAINT FK_materiales_categoria FOREIGN KEY (id_categoria) REFERENCES categoria_material(id_categoria),
+    CONSTRAINT FK_materiales_unidad FOREIGN KEY (id_unidad) REFERENCES unidad_medida(id_unidad_medida)
+);
+
+CREATE TABLE trabajadores (
+    id_trabajador INT IDENTITY(1,1),
+    nombre_trabajador VARCHAR(150) NOT NULL,
+    id_cargo INT, -- Relación con la tabla cargos
+    CONSTRAINT PK_trabajadores PRIMARY KEY (id_trabajador),
+    CONSTRAINT FK_trabajadores_cargo FOREIGN KEY (id_cargo) REFERENCES cargos(id_cargo)
+);
+
+CREATE TABLE cliente (
+    id_cliente INT IDENTITY(1,1),
+    nombre_empresa_cliente VARCHAR(150) NOT NULL,
+    telefono_cliente VARCHAR(20),
+    correo_cliente VARCHAR(100),
+    fecha_registro DATE,
+    id_direccion INT,
+    CONSTRAINT PK_cliente PRIMARY KEY (id_cliente),
+    CONSTRAINT FK_cliente_direccion FOREIGN KEY (id_direccion) REFERENCES direcciones(id_direccion)
+);
+
+-- 3. ENTIDAD CENTRAL Y SUS ENLACES: 
+
+CREATE TABLE proyecto (
+    id_proyecto INT IDENTITY(1,1),
+    id_cliente INT,
+    id_cotizacion INT, -- Clave directa según diagrama
+    nombre_proyecto VARCHAR(150) NOT NULL,
+    costo_total_proyecto DECIMAL(12,2),
+    CONSTRAINT PK_proyecto PRIMARY KEY (id_proyecto),
+    CONSTRAINT FK_proyecto_cliente FOREIGN KEY (id_cliente) REFERENCES cliente(id_cliente)
+);
+
+
+-- 4. TABLAS DEPENDIENTES DE PROYECTO (Nivel 4)
+
+CREATE TABLE detalle_material_obra (
+    id_proyecto INT,
+    id_material INT,
+    cantidad_utilizada DECIMAL(10,2) NOT NULL,
+    CONSTRAINT PK_detalle_material_obra PRIMARY KEY (id_proyecto, id_material),
+    CONSTRAINT FK_detalleMat_proyecto FOREIGN KEY (id_proyecto) REFERENCES proyecto(id_proyecto),
+    CONSTRAINT FK_detalleMat_material FOREIGN KEY (id_material) REFERENCES materiales(id_material)
+);
+
+CREATE TABLE proyecto_fecha_fin_estimada (
+    id_proyecto INT,
+    id_fecha_estimada INT IDENTITY(1,1),
+    fecha_estimada DATE NOT NULL,
+    CONSTRAINT PK_proyecto_fecha_fin_estimada PRIMARY KEY (id_proyecto, id_fecha_estimada),
+    CONSTRAINT FK_fechaFin_proyecto FOREIGN KEY (id_proyecto) REFERENCES proyecto(id_proyecto)
+);
+
+CREATE TABLE proyecto_fecha_inicio (
+    id_proyecto INT,
+    id_inicio INT IDENTITY(1,1),
+    fecha_inicio DATE NOT NULL,
+    CONSTRAINT PK_proyecto_fecha_inicio PRIMARY KEY (id_proyecto, id_inicio),
+    CONSTRAINT FK_fechaIni_proyecto FOREIGN KEY (id_proyecto) REFERENCES proyecto(id_proyecto)
+);
+
+CREATE TABLE ubicacion_proyecto (
+    id_proyecto INT,
+    id_ubicacion INT,
+    id_corregimiento INT,
+    CONSTRAINT PK_ubicacion_proyecto PRIMARY KEY (id_proyecto, id_ubicacion),
+    CONSTRAINT FK_ubicacionProj_proyecto FOREIGN KEY (id_proyecto) REFERENCES proyecto(id_proyecto),
+    CONSTRAINT FK_ubicacionProj_corregimiento FOREIGN KEY (id_corregimiento) REFERENCES corregimientos(id_corregimiento)
+);
+
+CREATE TABLE medidas_tecnicas (
+    id_medida INT IDENTITY(1,1),
+    id_proyecto INT,
+    dimensiones_medida VARCHAR(100),
+    id_tipo_estructura INT,
+    pago_por_unidad DECIMAL(10,2),
+    id_unidad_medida INT,
+    observaciones VARCHAR(MAX),
+    CONSTRAINT PK_medidas_tecnicas PRIMARY KEY (id_medida),
+    CONSTRAINT FK_medidas_proyecto FOREIGN KEY (id_proyecto) REFERENCES proyecto(id_proyecto),
+    CONSTRAINT FK_medidas_tipoEstructura FOREIGN KEY (id_tipo_estructura) REFERENCES tipo_estructura(id_tipo_estructura),
+    CONSTRAINT FK_medidas_unidadMedida FOREIGN KEY (id_unidad_medida) REFERENCES unidad_medida(id_unidad_medida)
+);
+
+CREATE TABLE solicitudes_quincenales (
+    id_solicitud INT IDENTITY(1,1),
+    id_proyecto INT,
+    monto_solicitud DECIMAL(12,2) NOT NULL,
+    CONSTRAINT PK_solicitudes_quincenales PRIMARY KEY (id_solicitud),
+    CONSTRAINT FK_solicitudes_proyecto FOREIGN KEY (id_proyecto) REFERENCES proyecto(id_proyecto)
+);
+
+CREATE TABLE estados_cuenta_proyecto (
+    id_cuenta INT IDENTITY(1,1),
+    id_proyecto INT,
+    saldo_cuenta DECIMAL(12,2) NOT NULL,
+    CONSTRAINT PK_estados_cuenta_proyecto PRIMARY KEY (id_cuenta),
+    CONSTRAINT FK_estadosCuenta_proyecto FOREIGN KEY (id_proyecto) REFERENCES proyecto(id_proyecto)
+);
+
+CREATE TABLE estado_proyecto (
+    id_proyecto INT,
+    id_estado INT,
+    CONSTRAINT PK_estado_proyecto PRIMARY KEY (id_proyecto, id_estado),
+    CONSTRAINT FK_estProj_proyecto FOREIGN KEY (id_proyecto) REFERENCES proyecto(id_proyecto),
+    CONSTRAINT FK_estProj_estado FOREIGN KEY (id_estado) REFERENCES estados(id_estado)
+);
+
+CREATE TABLE asignacion_personal (
+    id_proyecto INT,
+    id_trabajador INT,
+    fecha_inicio_asignacion DATE NOT NULL,
+    CONSTRAINT PK_asignacion_personal PRIMARY KEY (id_proyecto, id_trabajador),
+    CONSTRAINT FK_asignacion_proyecto FOREIGN KEY (id_proyecto) REFERENCES proyecto(id_proyecto),
+    CONSTRAINT FK_asignacion_trabajador FOREIGN KEY (id_trabajador) REFERENCES trabajadores(id_trabajador)
+);
+
+-- 5. MÓDULO DE NÓMINA 
+
+CREATE TABLE nomina (
+    id_nomina INT IDENTITY(1,1),
+    id_trabajador INT,
+    id_proyecto INT,
+    periodo_quincenal_nomina VARCHAR(50) NOT NULL,
+    horas_trabajadas_nomina DECIMAL(5,2) NOT NULL,
+    CONSTRAINT PK_nomina PRIMARY KEY (id_nomina),
+    CONSTRAINT FK_nomina_trabajador FOREIGN KEY (id_trabajador) REFERENCES trabajadores(id_trabajador),
+    CONSTRAINT FK_nomina_proyecto FOREIGN KEY (id_proyecto) REFERENCES proyecto(id_proyecto)
+);
+
+CREATE TABLE nomina_monto (
+    id_nomina INT,
+    id_monto INT IDENTITY(1,1),
+    monto_cancelado DECIMAL(10,2) NOT NULL,
+    fecha_pago DATE NOT NULL,
+    CONSTRAINT PK_nomina_monto PRIMARY KEY (id_nomina, id_monto),
+    CONSTRAINT FK_nominaMonto_nomina FOREIGN KEY (id_nomina) REFERENCES nomina(id_nomina)
+);
